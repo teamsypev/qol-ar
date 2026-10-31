@@ -20,8 +20,10 @@
 <body>
   <!-- Live camera feed (the "real world") -->
   <video id="video" playsinline muted autoplay></video>
-  <!-- 3D objects rendered on top of the camera -->
+  <!-- 3D objects rendered on top of the camera (classic mode) -->
   <canvas id="scene"></canvas>
+  <!-- SLAM mode: 8th Wall draws the camera feed and the 3D scene here -->
+  <canvas id="camerafeed" hidden></canvas>
   <!-- Hand skeleton, pinch cursor and labels -->
   <canvas id="overlay"></canvas>
 
@@ -29,6 +31,7 @@
   <div id="hud" hidden>
     <div class="top">
       <div class="chip" id="fps">— fps</div>
+      <div class="chip mode" id="mode" hidden></div>
       <button class="chip lang" data-action="lang" aria-label="Language">UZ</button>
     </div>
     <div id="toast" class="toast" hidden></div>
@@ -67,8 +70,15 @@
       <div class="langs">
         <button data-setlang="uz">Oʻzbekcha</button>
         <span>·</span>
+        <button data-setlang="ru">Русский</button>
+        <span>·</span>
         <button data-setlang="en">English</button>
       </div>
+      <p class="credits">
+        AR tracking: 8th Wall Engine © 2026 Niantic Spatial, Inc., used under the
+        <a href="https://github.com/8thwall/engine/blob/main/LICENSE" target="_blank" rel="noopener">XR Engine License</a>,
+        provided “as is” without warranties.
+      </p>
     </div>
   </main>
 

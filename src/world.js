@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 
-// World units are roughly "a toy's size". The camera sits at the origin and the
-// virtual table top is a horizontal plane below it, so it lines up with a real desk
-// when you point the phone down at one.
+// World units are roughly "a toy's size".
+// Classic mode: the camera sits at the origin and the virtual table is a plane 1.6 units below it.
+// SLAM mode (8th Wall): the real table is the ground plane y = 0 and the camera starts 1.6 above it.
 export const TABLE_Y = -1.6;
-const BOUNDS = { inner: 0.9, outer: 7.5, maxY: 3.5 };
+const CLASSIC_BOUNDS = { inner: 0.9, outer: 7.5, maxY: 3.5 };
+const XR_BOUNDS = { inner: 0, outer: 40, maxY: 6 };
 const GRAVITY = -9.0;
 const MAX_THROW = 11;
 
@@ -95,6 +96,10 @@ export class World {
     this.table.receiveShadow = true;
     this.scene.add(this.table);
 
+    this.tableY = TABLE_Y;
+    this.bounds = CLASSIC_BOUNDS;
+    this.external = false; // true when 8th Wall owns the renderer and camera
+
     this.raycaster = new THREE.Raycaster();
     this.objects = CATALOG.map((spec) => this._make(spec));
     this.width = 1;
@@ -143,16 +148,41 @@ export class World {
     return obj;
   }
 
+  /**
+   * Hand the scene over to 8th Wall: its renderer draws the camera feed and our toys in one pass,
+   * and its SLAM drives the camera, so the toys stay glued to the real table.
+   */
+  useXr({ scene, camera, renderer }) {
+    const own = this.renderer;
+    for (const child of [...this.scene.children]) scene.add(child);
+    this.scene = scene;
+    this.camera = camera;
+    this.renderer = renderer;
+    this.external = true;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    own.dispose();
+    own.forceContextLoss(); // free the classic WebGL context on budget phones
+    this.tableY = 0;
+    this.table.position.y = 0;
+    this.sun.position.set(2.5, 8.6, 0.5);
+    this.sun.target.position.set(0, 0, -2.5);
+    this.bounds = XR_BOUNDS;
+    this.reset(0, true);
+  }
+
   /** Puts every object back in front of the camera. `drop` makes them fall in from above. */
   reset(yaw = this.cameraYaw(), drop = true) {
     const sin = Math.sin(yaw), cos = Math.cos(yaw);
+    const cx = this.external ? this.camera.position.x : 0;
+    const cz = this.external ? this.camera.position.z : 0;
     this.objects.forEach((obj, i) => {
       const d = obj.userData;
       const [x, z] = LAYOUT[d.key];
       // rotate the layout so it sits in front of wherever the camera currently faces
-      const wx = x * cos - z * sin;
-      const wz = -x * sin - z * cos;
-      obj.position.set(wx, TABLE_Y + d.base + (drop ? 1.2 + i * 0.35 : 0), wz);
+      const wx = cx + x * cos - z * sin;
+      const wz = cz - x * sin - z * cos;
+      obj.position.set(wx, this.tableY + d.base + (drop ? 1.2 + i * 0.35 : 0), wz);
       obj.quaternion.setFromEuler(tmpE.set(0, yaw + (i - 2) * 0.4, 0));
       d.vel.set(0, 0, 0);
       d.angVel.set(0, 0, 0);
@@ -168,6 +198,7 @@ export class World {
   resize(w, h) {
     this.width = w;
     this.height = h;
+    if (this.external) return; // 8th Wall sizes its own canvas and sets the camera projection
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     // Roughly match a phone's main camera: taller field of view in portrait.
@@ -196,7 +227,8 @@ export class World {
 
   /** Nearest object whose on-screen footprint is close to (sx, sy), or null. */
   pick(sx, sy, slackPx = 46) {
-    const focal = this.height / 2 / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    // focal length in screen pixels, read from the projection (works for 8th Wall's camera too)
+    const focal = (this.height / 2) * this.camera.projectionMatrix.elements[5];
     let best = null;
     let bestScore = Infinity;
     const p = { x: 0, y: 0, behind: false };
@@ -263,7 +295,7 @@ export class World {
       }
 
       // Table
-      const floor = TABLE_Y + d.base;
+      const floor = this.tableY + d.base;
       d.onTable = false;
       if (obj.position.y <= floor) {
         obj.position.y = floor;
@@ -292,9 +324,10 @@ export class World {
         obj.quaternion.slerp(tmpQ, Math.min(1, dt * 6));
       }
 
-      // Invisible round wall around the camera (and a ceiling), so nothing flies off forever.
+      // Invisible round wall around the start point (and a ceiling), so nothing flies off forever.
+      const B = this.bounds;
       const h = Math.hypot(obj.position.x, obj.position.z);
-      const lim = h > BOUNDS.outer - d.radius ? BOUNDS.outer - d.radius : h < BOUNDS.inner ? BOUNDS.inner : 0;
+      const lim = h > B.outer - d.radius ? B.outer - d.radius : h < B.inner ? B.inner : 0;
       if (lim && h > 1e-5) {
         const nx = obj.position.x / h, nz = obj.position.z / h;
         obj.position.x = nx * lim;
@@ -305,7 +338,7 @@ export class World {
           d.vel.z -= 1.5 * vn * nz;
         }
       }
-      if (obj.position.y > BOUNDS.maxY) { obj.position.y = BOUNDS.maxY; d.vel.y = -Math.abs(d.vel.y) * 0.5; }
+      if (obj.position.y > this.tableY + B.maxY + 1.6) { obj.position.y = this.tableY + B.maxY + 1.6; d.vel.y = -Math.abs(d.vel.y) * 0.5; }
     }
 
     // Objects bump into each other (treated as upright cylinders).
@@ -351,6 +384,7 @@ export class World {
   }
 
   render() {
+    if (this.external) return; // 8th Wall renders the scene itself
     this.renderer.render(this.scene, this.camera);
   }
 }

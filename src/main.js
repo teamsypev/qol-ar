@@ -1,12 +1,15 @@
 import * as THREE from 'three';
-import { World, TABLE_Y } from './world.js';
+import { World } from './world.js';
 import { createHandTracker, HandGesture, HAND_CONNECTIONS } from './hands.js';
 import { GyroCamera } from './gyro.js';
-import { t, applyLang, setLang, getLang, STRINGS } from './i18n.js';
+import { preloadEngine, isSlamCompatible, startSlam, stopSlam } from './slam.js';
+import { t, applyLang, setLang, nextLang, getLang, STRINGS } from './i18n.js';
 
 const $ = (sel) => document.querySelector(sel);
 const video = $('#video');
 const sceneCanvas = $('#scene');
+const xrCanvas = $('#camerafeed');
+const modeEl = $('#mode');
 const overlay = $('#overlay');
 const ctx = overlay.getContext('2d');
 const intro = $('#intro');
@@ -17,6 +20,9 @@ const fpsEl = $('#fps');
 const toastEl = $('#toast');
 
 const isMobile = matchMedia('(pointer: coarse)').matches;
+const params = new URLSearchParams(location.search);
+// Real SLAM tracking on phones; `?classic` forces the simple gyro-only mode.
+const wantSlam = isMobile && !params.has('classic');
 
 applyLang();
 
@@ -52,7 +58,17 @@ const state = {
   },
   pointer: { active: false, id: null, x: 0, y: 0 },
   fakeHand: undefined, // test hook: array of 21 normalized points, or null for "no hand"
+  xr: false, // true when 8th Wall SLAM is running
+  XR8: null,
+  slam: null, // live SLAM state from slam.js
+  slamFrameId: 0,
+  frameW: 640, // size of the image given to hand tracking
+  frameH: 480,
+  lastTracking: '',
 };
+
+// Start downloading the AR engine early on phones, so it's ready when Start is tapped.
+const engineReady = wantSlam ? preloadEngine() : Promise.resolve(null);
 
 // Start downloading the hand model right away, while the user reads the intro.
 const trackerReady = createHandTracker()
@@ -83,8 +99,8 @@ resize();
 
 /** Normalized video coordinates → screen pixels, matching the CSS object-fit: cover crop. */
 function videoToScreen(nx, ny, out = { x: 0, y: 0 }) {
-  const vw = video.videoWidth || 640;
-  const vh = video.videoHeight || 480;
+  const vw = state.frameW || 640;
+  const vh = state.frameH || 480;
   const W = world.width;
   const H = world.height;
   const s = Math.max(W / vw, H / vh);
@@ -125,6 +141,8 @@ async function startCamera(facing) {
   state.facing = actual === 'user' ? 'user' : 'environment';
   state.mirror = state.facing === 'user';
   video.classList.toggle('mirror', state.mirror);
+  state.frameW = video.videoWidth || 640;
+  state.frameH = video.videoHeight || 480;
   state.lastVideoTime = -1;
   gesture.reset();
 }
@@ -155,9 +173,23 @@ document.addEventListener('visibilitychange', () => {
 
 function syncButtons() {
   const gyroBtn = document.querySelector('[data-action="gyro"]');
-  gyroBtn.classList.toggle('on', gyro.enabled && gyro.hasData && state.facing === 'environment');
-  gyroBtn.disabled = state.facing === 'user';
+  const flipBtn = document.querySelector('[data-action="flip"]');
+  if (state.xr) {
+    // In SLAM mode this button recenters the world instead of toggling the gyro.
+    gyroBtn.classList.remove('on');
+    gyroBtn.disabled = false;
+    gyroBtn.dataset.i18nLabel = 'recenter';
+    flipBtn.disabled = true;
+  } else {
+    gyroBtn.classList.toggle('on', gyro.enabled && gyro.hasData && state.facing === 'environment');
+    gyroBtn.disabled = state.facing === 'user';
+    gyroBtn.dataset.i18nLabel = 'gyro';
+    flipBtn.disabled = false;
+  }
+  applyLang();
   document.querySelector('[data-action="skeleton"]').classList.toggle('on', state.showSkeleton);
+  modeEl.hidden = !state.xr;
+  modeEl.textContent = t('slam');
 }
 
 // ---------------------------------------------------------------- start
@@ -173,6 +205,31 @@ startBtn.addEventListener('click', async () => {
       .catch(() => {});
   }
 
+  // 1) Try real SLAM tracking with 8th Wall.
+  if (wantSlam) {
+    setStatus(t('loadingAr'));
+    const XR8 = await engineReady;
+    if (XR8 && isSlamCompatible(XR8)) {
+      try {
+        state.slam = await startSlam(XR8, xrCanvas, { onReady: (xrScene) => world.useXr(xrScene) });
+        state.xr = true;
+        state.XR8 = XR8;
+        video.hidden = true;
+        sceneCanvas.hidden = true;
+        enterScene();
+        requestWakeLock();
+        afterStart();
+        return;
+      } catch (err) {
+        console.error('[qol] SLAM failed, falling back to classic mode', err);
+        stopSlam(XR8);
+        xrCanvas.hidden = true;
+        state.slamFailed = true;
+      }
+    }
+  }
+
+  // 2) Classic mode: our own camera + gyroscope.
   setStatus(t('loadingCam'));
   try {
     await startCamera('environment');
@@ -187,21 +244,28 @@ startBtn.addEventListener('click', async () => {
   gyro.recenter();
   enterScene();
   requestWakeLock();
+  if (state.slamFailed) toast(t('arFallback'), 3500);
+  afterStart();
+});
 
+function afterStart() {
   if (!state.tracker && !state.trackerFailed) toast(t('loadingModel'), 60000);
   trackerReady.then((ok) => {
-    if (ok) toast(state.facing === 'environment' ? t('pointTable') : t('noHand'), 3200);
-    else toast(t('modelError'), 6000);
+    if (!ok) toast(t('modelError'), 6000);
+    else if (state.xr) toast(t('scanTable'), 4000);
+    else toast(state.facing === 'environment' ? t('pointTable') : t('noHand'), 3200);
   });
-});
+}
 
 function enterScene() {
   intro.classList.add('gone');
   setTimeout(() => { intro.hidden = true; }, 450);
   hud.hidden = false;
   state.running = true;
-  world.camera.quaternion.copy(fixedQuat);
-  world.reset(0, true);
+  if (!state.xr) {
+    world.camera.quaternion.copy(fixedQuat);
+    world.reset(0, true);
+  }
   syncButtons();
 }
 
@@ -215,7 +279,8 @@ document.addEventListener('click', async (e) => {
   if (!btn) return;
   switch (btn.dataset.action) {
     case 'lang':
-      setLang(getLang() === 'uz' ? 'en' : 'uz');
+      nextLang();
+      if (state.running) syncButtons();
       break;
     case 'flip':
       try {
@@ -231,6 +296,13 @@ document.addEventListener('click', async (e) => {
       world.reset(world.cameraYaw(), true);
       break;
     case 'gyro':
+      if (state.xr) {
+        if (state.held) drop();
+        state.XR8.XrController.recenter();
+        setTimeout(() => world.reset(0, true), 150); // after the camera has jumped back
+        toast(t('recentered'), 1500);
+        break;
+      }
       if (!gyro.hasData) { toast(t('noGyro')); break; }
       gyro.enabled = !gyro.enabled;
       if (gyro.enabled) { gyro.recenter(); world.reset(0, true); }
@@ -319,7 +391,7 @@ function updateHeld(now, dt) {
   // The grab offset melts away so the object drifts to sit right under your fingers.
   g.offset.multiplyScalar(Math.exp(-dt * 2.5));
   const p = world.screenToWorld(sx, sy, dist, d.target).add(g.offset);
-  p.y = Math.max(p.y, TABLE_Y + d.base);
+  p.y = Math.max(p.y, world.tableY + d.base);
 
   if (state.holdSource === 'hand') {
     // Twisting your hand twists the object around the line of sight.
@@ -335,36 +407,55 @@ function updateHeld(now, dt) {
 
 // ---------------------------------------------------------------- touch / mouse fallback
 
-sceneCanvas.addEventListener('pointerdown', (e) => {
-  if (state.pointer.active || !state.running) return;
-  state.pointer = { active: true, id: e.pointerId, x: e.clientX, y: e.clientY };
-  sceneCanvas.setPointerCapture(e.pointerId);
-  const obj = world.pick(e.clientX, e.clientY, 24);
-  if (obj) {
-    if (state.held) drop();
-    grab(obj, 'pointer');
-  }
-});
-sceneCanvas.addEventListener('pointermove', (e) => {
-  if (!state.pointer.active || e.pointerId !== state.pointer.id) return;
-  state.pointer.x = e.clientX;
-  state.pointer.y = e.clientY;
-});
 const endPointer = (e) => {
   if (!state.pointer.active || e.pointerId !== state.pointer.id) return;
   state.pointer.active = false;
   if (state.holdSource === 'pointer') drop();
 };
-sceneCanvas.addEventListener('pointerup', endPointer);
-sceneCanvas.addEventListener('pointercancel', endPointer);
+for (const el of [sceneCanvas, xrCanvas]) {
+  el.addEventListener('pointerdown', (e) => {
+    if (state.pointer.active || !state.running) return;
+    state.pointer = { active: true, id: e.pointerId, x: e.clientX, y: e.clientY };
+    el.setPointerCapture(e.pointerId);
+    const obj = world.pick(e.clientX, e.clientY, 24);
+    if (obj) {
+      if (state.held) drop();
+      grab(obj, 'pointer');
+    }
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!state.pointer.active || e.pointerId !== state.pointer.id) return;
+    state.pointer.x = e.clientX;
+    state.pointer.y = e.clientY;
+  });
+  el.addEventListener('pointerup', endPointer);
+  el.addEventListener('pointercancel', endPointer);
+}
 
 // ---------------------------------------------------------------- hand tracking
 
 const stats = { frames: 0, detections: 0, since: performance.now() };
 
+/** The newest camera image for hand tracking, or null if there's nothing new since last time. */
+function nextCameraImage() {
+  if (state.xr) {
+    // SLAM mode: 8th Wall owns the camera and hands us a small RGBA copy of each frame.
+    const s = state.slam;
+    if (!s || !s.frame || s.frameId === state.slamFrameId) return null;
+    state.slamFrameId = s.frameId;
+    const { pixels, cols, rows } = s.frame;
+    state.frameW = cols;
+    state.frameH = rows;
+    return new ImageData(new Uint8ClampedArray(pixels.buffer, pixels.byteOffset, cols * rows * 4), cols, rows);
+  }
+  if (video.readyState < 2 || video.currentTime === state.lastVideoTime) return null;
+  state.lastVideoTime = video.currentTime;
+  return video;
+}
+
 function detectHands(now) {
-  if (video.readyState < 2) return;
-  if (video.currentTime === state.lastVideoTime) return; // no new camera frame yet
+  const image = nextCameraImage();
+  if (!image) return; // no new camera frame yet
   let landmarks;
   if (state.fakeHand !== undefined) {
     landmarks = state.fakeHand;
@@ -372,14 +463,13 @@ function detectHands(now) {
     if (!state.tracker) return;
     let result;
     try {
-      result = state.tracker.detectForVideo(video, now);
+      result = state.tracker.detectForVideo(image, now);
     } catch (err) {
       console.error('[qol] detection failed', err);
       return;
     }
     landmarks = result.landmarks && result.landmarks[0];
   }
-  state.lastVideoTime = video.currentTime;
   stats.detections++;
 
   if (landmarks) {
@@ -471,11 +561,15 @@ function frame(now) {
   lastFrame = now;
   if (!state.running) return;
 
-  const useGyro = gyro.enabled && state.facing === 'environment';
-  if (!(useGyro && gyro.apply(world.camera, dt))) {
-    world.camera.quaternion.slerp(fixedQuat, 1 - Math.exp(-dt * 8));
+  if (state.xr) {
+    trackingHints();
+  } else {
+    const useGyro = gyro.enabled && state.facing === 'environment';
+    if (!(useGyro && gyro.apply(world.camera, dt))) {
+      world.camera.quaternion.slerp(fixedQuat, 1 - Math.exp(-dt * 8));
+    }
   }
-  world.camera.updateMatrixWorld();
+  world.camera.updateMatrixWorld(); // in SLAM mode 8th Wall has just moved it
 
   detectHands(now);
   updateHeld(now, dt);
@@ -505,5 +599,21 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 
+/** Tell the user what SLAM needs: move slowly while it initializes, slow down if it's lost. */
+function trackingHints() {
+  const s = state.slam;
+  if (!s) return;
+  const key = `${s.trackingStatus}/${s.trackingReason}`;
+  if (key === state.lastTracking) return;
+  const wasNormal = state.lastTracking.startsWith('NORMAL');
+  state.lastTracking = key;
+  if (s.trackingStatus === 'NORMAL' && !state.slamWasNormal) {
+    state.slamWasNormal = true;
+    toast(t('tracking'), 3000);
+  } else if (s.trackingStatus === 'LIMITED' && wasNormal && s.trackingReason !== 'INITIALIZING') {
+    toast(t('trackingLost'), 2500);
+  }
+}
+
 // Handy for debugging in the browser console (and for automated tests).
-window.qol = { world, gesture, state, gyro, drop, enterScene, trackerReady };
+window.qol = { world, gesture, state, gyro, drop, enterScene, trackerReady, engineReady };
