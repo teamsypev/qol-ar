@@ -1,0 +1,195 @@
+:root {
+  --bg: #0b0f14;
+  --ink: #eef3f6;
+  --muted: #9aa8b4;
+  --tile: #19c3d6;      /* Samarkand tile turquoise */
+  --tile-deep: #0e7f99;
+  --sand: #f2c14e;      /* desert sand / gold */
+  --glass: rgba(12, 18, 24, 0.55);
+  --glass-line: rgba(255, 255, 255, 0.12);
+  --display: "Unbounded", system-ui, sans-serif;
+  --text: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--text);
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#video, #scene, #overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+}
+#video { object-fit: cover; background: #000; }
+#video.mirror { transform: scaleX(-1); }
+#overlay { pointer-events: none; }
+
+/* ---------- Start screen ---------- */
+#intro {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px calc(24px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  background:
+    radial-gradient(120% 60% at 50% 0%, rgba(25, 195, 214, 0.22), transparent 60%),
+    radial-gradient(90% 50% at 50% 100%, rgba(242, 193, 78, 0.14), transparent 60%),
+    repeating-conic-gradient(from 22.5deg at 50% 50%, rgba(255,255,255,0.025) 0 12.5%, transparent 0 25%),
+    var(--bg);
+  touch-action: auto;
+  z-index: 10;
+  transition: opacity 0.4s ease;
+}
+#intro.gone { opacity: 0; pointer-events: none; }
+
+.intro-inner { width: 100%; max-width: 420px; text-align: center; }
+
+.brand { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.brand h1 {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(40px, 12vw, 56px);
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+.brand h1 em { font-style: normal; color: var(--tile); }
+
+/* Eight-point star — a nod to Uzbek girih tilework */
+.logo {
+  width: 44px; height: 44px;
+  background: conic-gradient(from 0deg, var(--tile), var(--sand), var(--tile));
+  clip-path: polygon(50% 0%, 61% 25%, 85% 15%, 75% 39%, 100% 50%, 75% 61%, 85% 85%, 61% 75%, 50% 100%, 39% 75%, 15% 85%, 25% 61%, 0% 50%, 25% 39%, 15% 15%, 39% 25%);
+  animation: spin 14s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.tagline { color: var(--muted); font-size: 17px; line-height: 1.45; margin: 14px 0 26px; }
+
+.how { list-style: none; margin: 0 0 28px; padding: 0; display: grid; gap: 10px; text-align: left; }
+.how li {
+  display: flex; gap: 12px; align-items: center;
+  padding: 12px 14px;
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  border-radius: 14px;
+}
+.how span {
+  flex: none;
+  width: 28px; height: 28px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-family: var(--display); font-size: 13px;
+  background: rgba(25, 195, 214, 0.18); color: var(--tile);
+}
+.how p { margin: 0; font-size: 15px; line-height: 1.4; }
+
+.start {
+  width: 100%;
+  padding: 18px;
+  border: 0;
+  border-radius: 16px;
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 600;
+  color: #04232a;
+  background: linear-gradient(135deg, var(--tile), #7fe3ee 55%, var(--sand));
+  box-shadow: 0 10px 30px -10px rgba(25, 195, 214, 0.7);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.start:active { transform: scale(0.97); }
+.start:disabled { opacity: 0.6; }
+
+.status { min-height: 1.4em; color: var(--sand); font-size: 14px; margin: 14px 0 4px; }
+.note { color: var(--muted); font-size: 12.5px; margin: 0 0 16px; }
+
+.langs { display: flex; gap: 8px; justify-content: center; color: var(--muted); font-size: 14px; }
+.langs button {
+  background: none; border: 0; color: var(--muted); font: inherit; cursor: pointer; padding: 4px;
+}
+.langs button.on { color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
+
+/* ---------- HUD ---------- */
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+#hud > * { pointer-events: auto; }
+#hud[hidden] { display: none; }
+
+.top {
+  position: absolute; left: 0; right: 0; top: 0;
+  display: flex; justify-content: space-between;
+  padding: calc(12px + env(safe-area-inset-top)) 16px 0;
+  pointer-events: none;
+}
+.top > * { pointer-events: auto; }
+
+.chip {
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--ink);
+  font: 500 12.5px/1 var(--text);
+  font-variant-numeric: tabular-nums;
+}
+button.chip { cursor: pointer; font-weight: 600; }
+
+.bottom {
+  position: absolute; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex; gap: 10px;
+  padding: 8px;
+  border-radius: 22px;
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.btn {
+  width: 48px; height: 48px;
+  border-radius: 15px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  display: grid; place-items: center;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.btn:active { transform: scale(0.92); }
+.btn.on { background: rgba(25, 195, 214, 0.25); color: var(--tile); }
+.btn[disabled] { opacity: 0.35; }
+.btn svg {
+  width: 22px; height: 22px;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+
+.toast {
+  position: absolute; left: 50%; top: calc(64px + env(safe-area-inset-top));
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  padding: 10px 16px;
+  border-radius: 14px;
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-size: 14px;
+  text-align: center;
+  pointer-events: none;
+  animation: pop 0.25s ease;
+}
+.toast[hidden] { display: none; }
+@keyframes pop { from { opacity: 0; transform: translate(-50%, -6px); } }

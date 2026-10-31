@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <title>Qoʻl AR</title>
+  <meta name="description" content="Grab 3D objects in the real world with your bare hands — right in your phone's browser." />
+  <meta name="theme-color" content="#0b0f14" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three/three.module.js" } }
+  </script>
+</head>
+<body>
+  <!-- Live camera feed (the "real world") -->
+  <video id="video" playsinline muted autoplay></video>
+  <!-- 3D objects rendered on top of the camera -->
+  <canvas id="scene"></canvas>
+  <!-- Hand skeleton, pinch cursor and labels -->
+  <canvas id="overlay"></canvas>
+
+  <!-- In-app HUD -->
+  <div id="hud" hidden>
+    <div class="top">
+      <div class="chip" id="fps">— fps</div>
+      <button class="chip lang" data-action="lang" aria-label="Language">UZ</button>
+    </div>
+    <div id="toast" class="toast" hidden></div>
+    <div class="bottom">
+      <button class="btn" data-action="flip" data-i18n-label="flip">
+        <svg viewBox="0 0 24 24"><path d="M4 7h11l-3-3M20 17H9l3 3" /></svg>
+      </button>
+      <button class="btn" data-action="reset" data-i18n-label="reset">
+        <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4" /></svg>
+      </button>
+      <button class="btn" data-action="gyro" data-i18n-label="gyro">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><path d="M12 4v4M12 16v4M4 12h4M16 12h4" /></svg>
+      </button>
+      <button class="btn" data-action="skeleton" data-i18n-label="skeleton">
+        <svg viewBox="0 0 24 24"><path d="M8 20v-6l-2-5M12 20V6M16 20v-7l2-4M12 6l0-2M8 14h8" /></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Start screen -->
+  <main id="intro">
+    <div class="intro-inner">
+      <div class="brand">
+        <span class="logo" aria-hidden="true"></span>
+        <h1>Qoʻl&nbsp;<em>AR</em></h1>
+      </div>
+      <p class="tagline" data-i18n="tagline"></p>
+      <ol class="how">
+        <li><span>1</span><p data-i18n="how1"></p></li>
+        <li><span>2</span><p data-i18n="how2"></p></li>
+        <li><span>3</span><p data-i18n="how3"></p></li>
+      </ol>
+      <button id="start" class="start" data-i18n="start"></button>
+      <p class="status" id="status" aria-live="polite"></p>
+      <p class="note" data-i18n="privacy"></p>
+      <div class="langs">
+        <button data-setlang="uz">Oʻzbekcha</button>
+        <span>·</span>
+        <button data-setlang="en">English</button>
+      </div>
+    </div>
+  </main>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
