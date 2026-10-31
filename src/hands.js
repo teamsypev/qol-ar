@@ -1,4 +1,4 @@
-import { FilesetResolver, HandLandmarker } from '../vendor/mediapipe/vision_bundle.mjs';
+import { FilesetResolver, HandLandmarker } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.0/vision_bundle.mjs';
 import { OneEuro } from './filter.js';
 
 // The WASM runtime and the model are large, so they come from CDNs that phones cache well.

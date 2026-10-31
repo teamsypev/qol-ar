@@ -35,7 +35,7 @@ npx serve .        # or: python3 -m http.server 8080
 Open `http://localhost:3000` on your computer (the webcam works on `localhost`).
 To test on a phone, it must be served over HTTPS — deploy to Vercel/Netlify, or use a tunnel.
 
-No build step: plain ES modules, with Three.js and the MediaPipe JS bundle vendored in `vendor/`.
+No build step: plain ES modules. Three.js and MediaPipe load from jsDelivr (pinned versions).
 
 ## How it works
 
@@ -67,5 +67,5 @@ phone gyro ──► GyroCamera ──► Three.js camera │
 ## Credits & licenses
 
 - Code: MIT — see [LICENSE](LICENSE).
-- [Three.js](https://threejs.org) — MIT (`vendor/three/LICENSE`).
+- [Three.js](https://threejs.org) — MIT.
 - [MediaPipe Tasks Vision](https://github.com/google-ai-edge/mediapipe) — Apache-2.0. The hand model is downloaded from Google's model storage at runtime.
